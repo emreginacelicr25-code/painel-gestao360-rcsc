@@ -150,4 +150,79 @@ export default function Projetos() {
     }
   }
 
-  const projeto
+  const projetosFiltrados = useMemo(() => {
+    return projetos.filter((p) => {
+      const combinaBimestre = p.bimestre === bimestreAtivo
+      const combinaEixo = filtroEixo === 'Todos' || p.eixo === filtroEixo
+      return combinaBimestre && combinaEixo
+    })
+  }, [projetos, bimestreAtivo, filtroEixo])
+
+  return (
+    <div className="max-w-4xl">
+      <header className="mb-6">
+        <p className="font-mono text-xs tracking-widest text-moon-deep uppercase mb-2">Calendário estruturante 2026</p>
+        <h1 className="font-display text-3xl text-night flex items-center gap-3">
+          <FolderKanban size={26} className="text-moon-deep" /> Projetos & Ações
+        </h1>
+        <p className="text-night/60 mt-1 max-w-xl">
+          Todos os projetos e eventos do Plano de Ação Anual, organizados por bimestre, com
+          checklist de etapas e responsáveis.
+        </p>
+      </header>
+
+      {erroConexao && projetos[0]?.id?.startsWith('seed') && (
+        <div className="mb-6 text-sm bg-moon/10 border border-moon/30 text-moon-deep px-4 py-3 rounded-lg flex items-center justify-between gap-4">
+          <span>Exibindo a base local (ainda não carregada no Supabase).</span>
+          <button
+            onClick={carregarBaseInicialNoSupabase}
+            disabled={carregandoBase}
+            className="flex items-center gap-1.5 text-xs bg-night text-white px-3 py-1.5 rounded-md hover:bg-night-soft whitespace-nowrap"
+          >
+            <UploadCloud size={13} /> {carregandoBase ? 'Carregando…' : 'Carregar base inicial'}
+          </button>
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
+        {BIMESTRES.map((b) => (
+          <button
+            key={b}
+            onClick={() => setBimestreAtivo(b)}
+            className={`text-sm px-3.5 py-2 rounded-lg whitespace-nowrap transition-colors ${
+              bimestreAtivo === b ? 'bg-night text-white' : 'bg-paper-raised border border-paper-line text-night/60 hover:bg-night/5'
+            }`}
+          >
+            {b}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-1">
+        {['Todos', ...EIXOS].map((e) => (
+          <button
+            key={e}
+            onClick={() => setFiltroEixo(e)}
+            className={`text-xs px-3 py-1.5 rounded-full whitespace-nowrap transition-colors ${
+              filtroEixo === e ? 'bg-night/80 text-white' : 'bg-paper-raised border border-paper-line text-night/50 hover:bg-night/5'
+            }`}
+          >
+            {e}
+          </button>
+        ))}
+      </div>
+
+      {carregando ? (
+        <p className="text-sm text-night/50">Carregando projetos…</p>
+      ) : projetosFiltrados.length === 0 ? (
+        <p className="text-sm text-night/50">Nenhum projeto para este bimestre/eixo.</p>
+      ) : (
+        <div className="space-y-3">
+          {projetosFiltrados.map((projeto) => (
+            <ProjetoCard key={projeto.id} projeto={projeto} onAvancarEtapa={avancarEtapa} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+            }
