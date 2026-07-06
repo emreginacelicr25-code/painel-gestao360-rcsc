@@ -223,8 +223,27 @@ function ModalImportarPDF({ onFechar, casosExistentes, onConfirmar }) {
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i)
         const content = await page.getTextContent()
-        const linhaPagina = content.items.map((item) => item.str).join(' ')
-        textoCompleto += linhaPagina + '\n'
+
+        // agrupa os fragmentos de texto por linha real da tabela,
+        // usando a coordenada Y (altura) de cada fragmento — sem isso,
+        // o pdf.js devolve a página inteira como um só bloco de texto
+        const porLinha = new Map()
+        content.items.forEach((item) => {
+          const y = Math.round(item.transform[5])
+          if (!porLinha.has(y)) porLinha.set(y, [])
+          porLinha.get(y).push(item)
+        })
+
+        const linhasDaPagina = [...porLinha.entries()]
+          .sort((a, b) => b[0] - a[0])
+          .map(([, itens]) =>
+            itens
+              .sort((a, b) => a.transform[4] - b.transform[4])
+              .map((it) => it.str)
+              .join(' ')
+          )
+
+        textoCompleto += linhasDaPagina.join('\n') + '\n'
       }
 
       const extraidos = extrairCandidatosFNJ(textoCompleto)
