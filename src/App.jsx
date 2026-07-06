@@ -13,6 +13,9 @@ import Equipe from './pages/Equipe.jsx'
 import Indicadores from './pages/Indicadores.jsx'
 import Integracoes from './pages/Integracoes.jsx'
 import GerenciarAcessos from './pages/GerenciarAcessos.jsx'
+import Mensagens from './pages/Mensagens.jsx'
+import Agendamentos from './pages/Agendamentos.jsx'
+import RelatoriosSolicitados from './pages/RelatoriosSolicitados.jsx'
 
 const PAGINAS_POR_MODULO = {
   crescente: Crescente,
@@ -21,7 +24,10 @@ const PAGINAS_POR_MODULO = {
   equipe: Equipe,
   legislacao: Legislacao,
   indicadores: Indicadores,
-  integracoes: Integracoes
+  integracoes: Integracoes,
+  mensagens: Mensagens,
+  agendamentos: Agendamentos,
+  relatorios: RelatoriosSolicitados
 }
 
 export default function App() {
