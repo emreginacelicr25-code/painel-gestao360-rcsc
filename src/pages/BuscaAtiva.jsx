@@ -503,3 +503,194 @@ export default function BuscaAtiva() {
       <header className="mb-6 flex items-start justify-between gap-4">
         <div>
           <p className="font-mono text-xs tracking-widest text-moon-deep uppercase mb-2">
+Combate à evasão escolar
+        </p>
+        <h1 className="font-display text-3xl text-night">Busca Ativa</h1>
+        <p className="text-night/60 mt-1 max-w-xl">
+          Fluxo de 5 etapas conforme a Lei Estadual nº 7.614/2017 e o ECA (Art. 56) — da
+          identificação da falta até o acionamento do Conselho Tutelar.
+        </p>
+      </div>
+      <div className="flex gap-2 shrink-0">
+        <button
+          onClick={() => setModalImportarAberto(true)}
+          className="flex items-center gap-2 bg-paper-raised border border-paper-line text-night text-sm font-medium px-3 py-2.5 rounded-lg hover:bg-night/5 transition-colors"
+        >
+          <Upload size={16} /> Importar PDF (SME)
+        </button>
+        <button
+          onClick={() => setModalAberto(true)}
+          className="flex items-center gap-2 bg-night text-white text-sm font-medium px-4 py-2.5 rounded-lg hover:bg-night-soft transition-colors"
+        >
+          <Plus size={16} /> Novo caso
+        </button>
+      </div>
+    </header>
+
+    {erroConexao && (
+      <div className="mb-6 text-sm bg-moon/10 border border-moon/30 text-moon-deep px-4 py-3 rounded-lg">
+        Exibindo dados de exemplo — conecte o Supabase para persistir os registros reais.
+      </div>
+    )}
+
+    <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="bg-paper-raised border border-paper-line rounded-card p-4">
+        <p className="text-2xl font-display text-night">{stats.ativos}</p>
+        <p className="text-sm text-night/60">Casos ativos em acompanhamento</p>
+      </div>
+      <div className="bg-paper-raised border border-paper-line rounded-card p-4">
+        <p className={`text-2xl font-display ${stats.criticos > 0 ? 'text-signal' : 'text-sage'}`}>
+          {stats.criticos}
+        </p>
+        <p className="text-sm text-night/60">Casos com 30+ dias (meta: zero)</p>
+      </div>
+      <div className="bg-paper-raised border border-paper-line rounded-card p-4">
+        <p className="text-2xl font-display text-night">{stats.total}</p>
+        <p className="text-sm text-night/60">Total de casos no ano</p>
+      </div>
+    </div>
+
+    {carregando ? (
+      <p className="text-sm text-night/50">Carregando casos…</p>
+    ) : (
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        {ETAPAS.map((etapa) => (
+          <div key={etapa.n} className="min-w-0">
+            <div className="flex items-center gap-2 mb-3 px-1">
+              <etapa.icon size={15} className="text-night/50 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-night truncate">{etapa.titulo}</p>
+                <p className="text-[10px] text-night/40 font-mono">{etapa.prazo}</p>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {porEtapa[etapa.n].length === 0 ? (
+                <p className="text-xs text-night/30 italic px-1">Sem casos nesta etapa</p>
+              ) : (
+                porEtapa[etapa.n].map((caso) => (
+                  <CasoCard
+                    key={caso.id}
+                    caso={caso}
+                    onAvancar={(c) => mudarEtapa(c, 1)}
+                    onVoltar={(c) => mudarEtapa(c, -1)}
+                    onCopiarMensagem={copiarMensagem}
+                    copiado={idCopiado === caso.id}
+                  />
+                ))
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+
+    {modalAberto && (
+      <div className="fixed inset-0 bg-night/40 flex items-center justify-center p-4 z-50">
+        <div className="bg-paper-raised rounded-card w-full max-w-md p-6">
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="font-display text-xl text-night">Novo caso de Busca Ativa</h2>
+            <button onClick={() => setModalAberto(false)} className="text-night/40 hover:text-night">
+              <X size={20} />
+            </button>
+          </div>
+          <form onSubmit={salvarNovoCaso} className="space-y-4">
+            <div>
+              <label className="text-xs font-medium text-night/60">Nome do aluno</label>
+              <input
+                required
+                className="mt-1 w-full border border-paper-line rounded-lg px-3 py-2 text-sm"
+                value={novoCaso.nome_aluno}
+                onChange={(e) => setNovoCaso({ ...novoCaso, nome_aluno: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-medium text-night/60">Turma</label>
+                <input
+                  required
+                  className="mt-1 w-full border border-paper-line rounded-lg px-3 py-2 text-sm"
+                  value={novoCaso.turma}
+                  onChange={(e) => setNovoCaso({ ...novoCaso, turma: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-night/60">Faltas acumuladas</label>
+                <input
+                  type="number"
+                  min={0}
+                  className="mt-1 w-full border border-paper-line rounded-lg px-3 py-2 text-sm"
+                  value={novoCaso.faltas_acumuladas}
+                  onChange={(e) => setNovoCaso({ ...novoCaso, faltas_acumuladas: Number(e.target.value) })}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-night/60">Data da 1ª falta</label>
+              <input
+                type="date"
+                required
+                className="mt-1 w-full border border-paper-line rounded-lg px-3 py-2 text-sm"
+                value={novoCaso.data_primeira_falta}
+                onChange={(e) => setNovoCaso({ ...novoCaso, data_primeira_falta: e.target.value })}
+              />
+            </div>
+            <button
+              type="submit"
+              className="w-full bg-night text-white text-sm font-medium py-2.5 rounded-lg hover:bg-night-soft transition-colors"
+            >
+              Iniciar acompanhamento
+            </button>
+          </form>
+        </div>
+      </div>
+    )}
+
+    {modalImportarAberto && (
+      <ModalImportarPDF
+        casosExistentes={casos}
+        onFechar={() => setModalImportarAberto(false)}
+        onConfirmar={importarCandidatosPDF}
+      />
+    )}
+  </div>
+  )
+}
+
+const CASOS_EXEMPLO = [
+  {
+    id: 'ex-1',
+    nome_aluno: 'Diogo Moreno',
+    turma: '203',
+    data_primeira_falta: new Date(Date.now() - 4 * 86400000).toISOString(),
+    faltas_acumuladas: 4,
+    status: 'em_busca',
+    etapa_atual: 2
+  },
+  {
+    id: 'ex-2',
+    nome_aluno: 'Mirella',
+    turma: '502',
+    data_primeira_falta: new Date(Date.now() - 9 * 86400000).toISOString(),
+    faltas_acumuladas: 6,
+    status: 'em_busca',
+    etapa_atual: 3
+  },
+  {
+    id: 'ex-3',
+    nome_aluno: 'Aluno(a) — Turma 1005',
+    turma: '1005',
+    data_primeira_falta: new Date(Date.now() - 12 * 86400000).toISOString(),
+    faltas_acumuladas: 8,
+    status: 'aguardando_ct',
+    etapa_atual: 5
+  },
+  {
+    id: 'ex-4',
+    nome_aluno: 'Kayllane',
+    turma: '203',
+    data_primeira_falta: new Date(Date.now() - 2 * 86400000).toISOString(),
+    faltas_acumuladas: 3,
+    status: 'ativo',
+    etapa_atual: 1
+  }
+]
