@@ -469,4 +469,125 @@ export default function Mensagens() {
                       <span className="text-[11px] px-2 py-0.5 rounded-full bg-night/5 text-night/60">{categoria}</span>
                     )}
                     {urgencia && (
-                      <span cl
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full ${URGENCIA_COLOR[urgenciaKey] || 'bg-night/5 text-night/60'}`}>
+                        {urgencia}
+                      </span>
+                    )}
+                  </div>
+
+                  {(alunoNome || alunoTurma) && (
+                    <p className="text-sm font-medium text-night mb-1">
+                      {[alunoNome, alunoTurma].filter(Boolean).join(' — ')}
+                    </p>
+                  )}
+
+                  <p className="text-sm text-night/80 mb-3">
+                    {configTriagem.colMensagem ? item[configTriagem.colMensagem] : ''}
+                  </p>
+
+                  <div className="flex items-center justify-end">
+                    <button
+                      onClick={() => registrarDaTriagem(item)}
+                      disabled={registrada}
+                      className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
+                        registrada
+                          ? 'bg-sage/15 text-sage cursor-default'
+                          : 'bg-night text-white hover:bg-night-soft'
+                      }`}
+                    >
+                      {registrada ? 'Já registrada' : 'Registrar'}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </section>
+
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs font-semibold text-night/40 uppercase tracking-wide">
+            Registros salvos ({registrosFiltrados.length})
+          </h2>
+          <div className="flex gap-1.5">
+            {['Todas', 'pendente', 'encaminhada', 'concluida'].map((status) => (
+              <button
+                key={status}
+                onClick={() => setFiltroStatus(status)}
+                className={`text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
+                  filtroStatus === status
+                    ? 'bg-night text-white'
+                    : 'bg-paper-raised border border-paper-line text-night/60 hover:bg-night/5'
+                }`}
+              >
+                {status === 'Todas' ? 'Todas' : STATUS_LABELS[status]?.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {carregando ? (
+          <p className="text-sm text-night/50">Carregando registros…</p>
+        ) : registrosFiltrados.length === 0 ? (
+          <p className="text-sm text-night/50">Nenhum registro encontrado.</p>
+        ) : (
+          <div className="space-y-2">
+            {registrosFiltrados.map((registro) => (
+              <div key={registro.id} className="bg-paper-raised border border-paper-line rounded-lg p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                      {registro.remetente && (
+                        <span className="text-[11px] text-night/50">{registro.remetente}</span>
+                      )}
+                      {registro.aluno_turma && (
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-night/5 text-night/60">
+                          {registro.aluno_turma}
+                        </span>
+                      )}
+                      <button
+                        onClick={() => avancarStatus(registro)}
+                        className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_LABELS[registro.status]?.color}`}
+                      >
+                        {STATUS_LABELS[registro.status]?.label}
+                      </button>
+                    </div>
+                    <p className="text-sm text-night/80">{registro.mensagem}</p>
+                    {registro.resposta && (
+                      <p className="text-sm text-night/50 mt-1.5 border-l-2 border-paper-line pl-2">
+                        {registro.resposta}
+                      </p>
+                    )}
+                  </div>
+                  <span className="text-[11px] text-night/40 shrink-0">
+                    {registro.criado_em ? new Date(registro.criado_em).toLocaleDateString('pt-BR') : ''}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {modalAberto && (
+        <ModalNovaMensagem
+          base={baseTriagem}
+          onFechar={() => {
+            setModalAberto(false)
+            setBaseTriagem(null)
+          }}
+          onSalvar={salvarMensagem}
+        />
+      )}
+
+      {configPainelAberto && (
+        <PainelConexaoTriagem
+          config={configTriagem}
+          onSalvar={salvarConfig}
+          onFechar={() => setConfigPainelAberto(false)}
+        />
+      )}
+    </div>
+  )
+}
