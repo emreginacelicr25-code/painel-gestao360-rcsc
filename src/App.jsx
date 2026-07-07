@@ -16,6 +16,7 @@ import GerenciarAcessos from './pages/GerenciarAcessos.jsx'
 import Mensagens from './pages/Mensagens.jsx'
 import Agendamentos from './pages/Agendamentos.jsx'
 import RelatoriosSolicitados from './pages/RelatoriosSolicitados.jsx'
+import AtasReuniao from './pages/AtasReuniao.jsx'
 
 const PAGINAS_POR_MODULO = {
   crescente: Crescente,
@@ -27,7 +28,7 @@ const PAGINAS_POR_MODULO = {
   integracoes: Integracoes,
   mensagens: Mensagens,
   agendamentos: Agendamentos,
-  relatorios: RelatoriosSolicitados
+  relatorios: RelatoriosSolicitados, atas: AtasReuniao,
 }
 
 export default function App() {
