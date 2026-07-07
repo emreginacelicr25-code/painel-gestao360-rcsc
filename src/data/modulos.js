@@ -8,7 +8,8 @@ import {
   Link2,
   MessageCircle,
   CalendarClock,
-  FileText
+  FileText,
+  BookOpen,
 } from 'lucide-react'
 
 // Lista central dos módulos que o diretor pode liberar/restringir por login.
@@ -22,6 +23,7 @@ export const MODULOS = [
   { chave: 'mensagens', to: '/mensagens', label: 'Mensagens', icon: MessageCircle },
   { chave: 'agendamentos', to: '/agendamentos', label: 'Agendamentos', icon: CalendarClock },
   { chave: 'relatorios', to: '/relatorios', label: 'Solicitação de Relatórios', icon: FileText },
+  { chave: 'atas', to: '/atas', label: 'Atas de Reunião', icon: BookOpen },
   { chave: 'projetos', to: '/projetos', label: 'Projetos & Ações', icon: FolderKanban },
   { chave: 'equipe', to: '/equipe', label: 'Equipe', icon: Users },
   { chave: 'legislacao', to: '/legislacao', label: 'Legislação & Documentos', icon: Scale },
