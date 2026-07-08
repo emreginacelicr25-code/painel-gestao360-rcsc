@@ -308,6 +308,7 @@ export default function Mensagens() {
   
   const [sugestoesIA, setSugestoesIA] = useState({})
   const [carregandoIA, setCarregandoIA] = useState({})
+  const [destinatarioIA, setDestinatarioIA] = useState({})
 
   useEffect(() => {
     carregarRegistros()
@@ -416,7 +417,8 @@ export default function Mensagens() {
           urgencia: configTriagem.colUrgencia ? item[configTriagem.colUrgencia] : '',
           alunoNome,
           alunoTurma,
-          remetente: configTriagem.colRemetente ? item[configTriagem.colRemetente] : ''
+          remetente: configTriagem.colRemetente ? item[configTriagem.colRemetente] : '',
+          destinatario: destinatarioIA[idExterno] || 'responsavel'
         })
       })
       const dados = await resp.json()
@@ -546,7 +548,18 @@ export default function Mensagens() {
                     {configTriagem.colMensagem ? item[configTriagem.colMensagem] : ''}
                   </p>
 
-                  <div className="flex items-center justify-end gap-2">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                  <select
+                    value={destinatarioIA[idExterno] || 'responsavel'}
+                    onChange={(e) =>
+                      setDestinatarioIA((prev) => ({ ...prev, [idExterno]: e.target.value }))
+                    }
+                    className="text-xs border border-paper-line rounded-lg px-2 py-1.5 text-night bg-white"
+                  >
+                    <option value="responsavel">Para: Responsável</option>
+                    <option value="equipe">Para: Quem enviou (equipe)</option>
+                    <option value="ambos">Ambos</option>
+                  </select>
                   <button
                     onClick={() => gerarSugestaoIA(item, idExterno)}
                     disabled={carregandoIA[idExterno]}
@@ -577,17 +590,26 @@ export default function Mensagens() {
                     <p className="text-[11px] font-medium text-night/50 uppercase tracking-wide">
                       Sugestões de resposta
                     </p>
-                    {sugestoesIA[idExterno].map((sugestao, si) => (
-                      <div key={si} className="bg-moon/10 border border-moon/30 rounded-lg p-2.5">
-                        <p className="text-xs text-night/80 whitespace-pre-wrap mb-1.5">{sugestao}</p>
-                        <button
-                          onClick={() => usarSugestaoIA(item, idExterno, sugestao)}
-                          className="text-[11px] font-medium text-moon-deep hover:underline"
-                        >
-                          Usar esta sugestão
-                        </button>
-                      </div>
-                    ))}
+                    {sugestoesIA[idExterno].map((sugestao, si) => {
+                      const texto = typeof sugestao === 'string' ? sugestao : sugestao.texto
+                      const paraQuem = typeof sugestao === 'string' ? null : sugestao.destinatario
+                      return (
+                        <div key={si} className="bg-moon/10 border border-moon/30 rounded-lg p-2.5">
+                          {paraQuem && (
+                            <span className="inline-block text-[10px] font-semibold uppercase tracking-wide text-moon-deep bg-moon/25 px-2 py-0.5 rounded-full mb-1.5">
+                              {paraQuem === 'equipe' ? 'Para a equipe' : 'Para o responsável'}
+                            </span>
+                          )}
+                          <p className="text-xs text-night/80 whitespace-pre-wrap mb-1.5">{texto}</p>
+                          <button
+                            onClick={() => usarSugestaoIA(item, idExterno, texto)}
+                            className="text-[11px] font-medium text-moon-deep hover:underline"
+                          >
+                            Usar esta sugestão
+                          </button>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
                 </div>
