@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import { MessageCircle, Plus, X, Settings2, Download, RefreshCw, AlertCircle, AlertTriangle } from 'lucide-react'
+import { MessageCircle, Plus, X, Settings2, Download, RefreshCw, AlertCircle, AlertTriangle, Sparkles, Loader2 } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient.js'
 
 // ---------------------------------------------------------------
@@ -305,6 +305,9 @@ export default function Mensagens() {
   const [configTriagem, setConfigTriagem] = useState(null)
   const [previaTriagem, setPreviaTriagem] = useState([])
   const [statusPrevia, setStatusPrevia] = useState('idle')
+  
+  const [sugestoesIA, setSugestoesIA] = useState({})
+  const [carregandoIA, setCarregandoIA] = useState({})
 
   useEffect(() => {
     carregarRegistros()
@@ -395,6 +398,45 @@ export default function Mensagens() {
       aluno_turma: [alunoNome, alunoTurma].filter(Boolean).join(' — '),
       mensagem: item[configTriagem.colMensagem] || '',
       resposta: configTriagem.colResposta ? item[configTriagem.colResposta] || '' : '',
+      triagem_ref_id: String(idExterno)
+    })
+    setModalAberto(true)
+  }
+  async function gerarSugestaoIA(item, idExterno) {
+    setCarregandoIA((prev) => ({ ...prev, [idExterno]: true }))
+    try {
+      const alunoNome = configTriagem.colAlunoNome ? item[configTriagem.colAlunoNome] : ''
+      const alunoTurma = configTriagem.colAlunoTurma ? item[configTriagem.colAlunoTurma] : ''
+      const resp = await fetch('/api/gerar-resposta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mensagem: configTriagem.colMensagem ? item[configTriagem.colMensagem] : '',
+          categoria: configTriagem.colCategoria ? item[configTriagem.colCategoria] : '',
+          urgencia: configTriagem.colUrgencia ? item[configTriagem.colUrgencia] : '',
+          alunoNome,
+          alunoTurma,
+          remetente: configTriagem.colRemetente ? item[configTriagem.colRemetente] : ''
+        })
+      })
+      const dados = await resp.json()
+      setSugestoesIA((prev) => ({ ...prev, [idExterno]: dados.sugestoes || [] }))
+    } catch (e) {
+      console.warn('[Mensagens] Falha ao gerar sugestão IA:', e.message)
+      setSugestoesIA((prev) => ({ ...prev, [idExterno]: [] }))
+    } finally {
+      setCarregandoIA((prev) => ({ ...prev, [idExterno]: false }))
+    }
+  }
+
+  function usarSugestaoIA(item, idExterno, texto) {
+    const alunoNome = configTriagem.colAlunoNome ? item[configTriagem.colAlunoNome] : ''
+    const alunoTurma = configTriagem.colAlunoTurma ? item[configTriagem.colAlunoTurma] : ''
+    setBaseTriagem({
+      remetente: configTriagem.colRemetente ? item[configTriagem.colRemetente] : '',
+      aluno_turma: [alunoNome, alunoTurma].filter(Boolean).join(' — '),
+      mensagem: item[configTriagem.colMensagem] || '',
+      resposta: texto,
       triagem_ref_id: String(idExterno)
     })
     setModalAberto(true)
@@ -504,19 +546,50 @@ export default function Mensagens() {
                     {configTriagem.colMensagem ? item[configTriagem.colMensagem] : ''}
                   </p>
 
-                  <div className="flex items-center justify-end">
-                    <button
-                      onClick={() => registrarDaTriagem(item)}
-                      disabled={registrada}
-                      className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
-                        registrada
-                          ? 'bg-sage/15 text-sage cursor-default'
-                          : 'bg-night text-white hover:bg-night-soft'
-                      }`}
-                    >
-                      {registrada ? 'Já registrada' : 'Registrar'}
-                    </button>
+                  <div className="flex items-center justify-end gap-2">
+                  <button
+                    onClick={() => gerarSugestaoIA(item, idExterno)}
+                    disabled={carregandoIA[idExterno]}
+                    className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-paper-line text-night hover:bg-night/5 transition-colors disabled:opacity-50"
+                  >
+                    {carregandoIA[idExterno] ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <Sparkles size={13} />
+                    )}
+                    {carregandoIA[idExterno] ? 'Gerando...' : 'Gerar com IA'}
+                  </button>
+                  <button
+                    onClick={() => registrarDaTriagem(item)}
+                    disabled={registrada}
+                    className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
+                      registrada
+                        ? 'bg-sage/15 text-sage cursor-default'
+                        : 'bg-night text-white hover:bg-night-soft'
+                    }`}
+                  >
+                    {registrada ? 'Já registrada' : 'Registrar'}
+                  </button>
+                </div>
+
+                {sugestoesIA[idExterno] && sugestoesIA[idExterno].length > 0 && (
+                  <div className="mt-3 space-y-2 border-t border-paper-line pt-3">
+                    <p className="text-[11px] font-medium text-night/50 uppercase tracking-wide">
+                      Sugestões de resposta
+                    </p>
+                    {sugestoesIA[idExterno].map((sugestao, si) => (
+                      <div key={si} className="bg-moon/10 border border-moon/30 rounded-lg p-2.5">
+                        <p className="text-xs text-night/80 whitespace-pre-wrap mb-1.5">{sugestao}</p>
+                        <button
+                          onClick={() => usarSugestaoIA(item, idExterno, sugestao)}
+                          className="text-[11px] font-medium text-moon-deep hover:underline"
+                        >
+                          Usar esta sugestão
+                        </button>
+                      </div>
+                    ))}
                   </div>
+                )}
                 </div>
               )
             })}
