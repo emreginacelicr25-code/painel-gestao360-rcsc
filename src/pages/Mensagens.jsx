@@ -27,6 +27,7 @@ const URGENCIA_COLOR = {
   media: 'bg-moon/20 text-moon-deep',
   alta: 'bg-signal/15 text-signal'
 }
+const PRIORIDADE_URGENCIA = { alta: 0, media: 1, baixa: 2 }
 
 function lerConfigTriagem() {
   try {
@@ -330,9 +331,27 @@ export default function Mensagens() {
         .from(cfg.tabela)
         .select('*')
         .order(cfg.colData, { ascending: false })
-        .limit(20)
+        .limit(500)
       if (error) throw error
-      setPreviaTriagem(data || [])
+
+      const semBaixas = (data || []).filter((item) => {
+        if (!cfg.colUrgencia) return true
+        const urgencia = String(item[cfg.colUrgencia] || '').toLowerCase()
+        return urgencia !== 'baixa'
+      })
+
+      const ordenado = semBaixas.sort((a, b) => {
+        const urgenciaA = cfg.colUrgencia ? String(a[cfg.colUrgencia] || '').toLowerCase() : ''
+        const urgenciaB = cfg.colUrgencia ? String(b[cfg.colUrgencia] || '').toLowerCase() : ''
+        const prioridadeA = PRIORIDADE_URGENCIA[urgenciaA] ?? 3
+        const prioridadeB = PRIORIDADE_URGENCIA[urgenciaB] ?? 3
+        if (prioridadeA !== prioridadeB) return prioridadeA - prioridadeB
+        const dataA = cfg.colData ? a[cfg.colData] : null
+        const dataB = cfg.colData ? b[cfg.colData] : null
+        return new Date(dataB) - new Date(dataA)
+      })
+
+      setPreviaTriagem(ordenado)
       setStatusPrevia('ok')
     } catch (e) {
       console.warn('[Mensagens] Falha ao consultar rcsc-triagem:', e.message)
