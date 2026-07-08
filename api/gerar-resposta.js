@@ -1,7 +1,8 @@
 // api/gerar-resposta.js
 // Gera sugestões de resposta para mensagens recebidas na Central de Triagem,
-// usando o Gemini (Google) e como referência de tom/estilo os modelos fixos
-// já usados pela escola + respostas reais recentes registradas no painel.
+// usando o Gemini (Google), com referência de tom/estilo dos modelos fixos
+// da escola + respostas reais recentes, e distinguindo o destinatário:
+// responsável do aluno, quem enviou a mensagem (equipe), ou ambos.
 
 const MODELOS_REFERENCIA = [
   `📢 *Comunicado — Aula Passeio*
@@ -47,21 +48,6 @@ Lamentamos o transtorno e contamos com a compreensão de todos.
 
 Atenciosamente,
 *Direção — E.M. Regina Celi*`,
-
-  `⚠️ *Comunicado — Ausência de Transporte Escolar*
-
-Prezados responsáveis,
-
-Informamos que o transporte escolar *não realizará* o atendimento no dia *[DATA]* em razão de *[MOTIVO]*.
-
-📚 *Orientação pedagógica:* a aula deste dia *não será suspensa*, portanto a reposição de conteúdo deverá ser acompanhada diretamente com a(o) professora(o) regente.
-
-⚖️ *A empresa/órgão responsável pelo transporte será formalmente notificada sobre a ausência do serviço na data de hoje.*
-
-Pedimos compreensão e contamos com a colaboração das famílias.
-
-Atenciosamente,
-*Direção — E.M. Regina Celi da Silva Cerdeira*`,
 
   `Olá, *[NOME DO RESPONSÁVEL]*! 👋
 
@@ -124,6 +110,19 @@ Atenciosamente,
 *E.M. Regina Celi da Silva Cerdeira*`
 ]
 
+function montarInstrucaoDestinatario(destinatario) {
+  if (destinatario === 'equipe') {
+    return `Gere exatamente 3 sugestões de resposta, todas endereçadas AO(À) PROFISSIONAL (ex: professora) que enviou o registro/mensagem — agradecendo, confirmando o recebimento e informando os encaminhamentos dados (ex: "a família será/foi comunicada"), quando aplicável. NÃO escreva mensagens para o responsável do aluno aqui.`
+  }
+  if (destinatario === 'ambos') {
+    return `Gere exatamente 2 sugestões, cada uma para um destinatário diferente:
+1. Uma mensagem PARA O(A) RESPONSÁVEL do aluno, dando ciência clara e acolhedora do que foi relatado pela equipe (o que aconteceu, quando, e o que a escola já fez, se souber).
+2. Uma mensagem de resposta PARA O(A) PROFISSIONAL que enviou o registro (ex: professora), confirmando o recebimento e informando que a família foi/será comunicada.
+Marque cada sugestão com o campo "destinatario" igual a "responsavel" ou "equipe", conforme o caso.`
+  }
+  return `Gere exatamente 3 sugestões de resposta, todas endereçadas AO(À) RESPONSÁVEL do aluno, dando ciência clara e acolhedora da situação relatada.`
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ erro: 'Método não permitido' })
@@ -134,11 +133,15 @@ export default async function handler(req, res) {
     return res.status(500).json({ erro: 'GEMINI_API_KEY não configurada no servidor' })
   }
 
-  const { mensagem, categoria, urgencia, alunoNome, alunoTurma, remetente } = req.body || {}
+  const { mensagem, categoria, urgencia, alunoNome, alunoTurma, remetente, destinatario } = req.body || {}
 
   if (!mensagem || !String(mensagem).trim()) {
     return res.status(400).json({ erro: 'Campo "mensagem" é obrigatório' })
   }
+
+  const destinatarioNormalizado = ['responsavel', 'equipe', 'ambos'].includes(destinatario)
+    ? destinatario
+    : 'responsavel'
 
   let exemplosReais = []
   try {
@@ -166,7 +169,7 @@ export default async function handler(req, res) {
 
   const promptSistema = `Você é um assistente que ajuda a equipe da E.M. Regina Celi da Silva Cerdeira (escola pública municipal, Duque de Caxias/RJ, Centro de Referência em Educação Inclusiva) a redigir respostas para mensagens recebidas de responsáveis de alunos ou funcionários via WhatsApp.
 
-Escreva respostas no MESMO ESTILO dos exemplos abaixo: tom institucional, mas acolhedor; uso moderado de emojis (📢 ⚠️ ✅ 👋 💚 conforme o tom da mensagem); saudação nominal quando fizer sentido; fechamento com "Atenciosamente," seguido da assinatura apropriada (Direção / Secretaria / Equipe Gestora / Equipe Diretiva — E.M. Regina Celi, conforme o assunto). Cite legislação (LDB, ECA) apenas quando genuinamente relevante ao tema da mensagem. Use *asteriscos* para negrito estilo WhatsApp.
+Escreva no MESMO ESTILO dos exemplos abaixo: tom institucional, mas acolhedor; uso moderado de emojis (📢 ⚠️ ✅ 👋 💚 conforme o tom da mensagem); saudação nominal quando fizer sentido; fechamento com "Atenciosamente," seguido da assinatura apropriada (Direção / Secretaria / Equipe Gestora / Equipe Diretiva — E.M. Regina Celi, conforme o assunto). Cite legislação (LDB, ECA) apenas quando genuinamente relevante. Use *asteriscos* para negrito estilo WhatsApp.
 
 A resposta deve ser ORIGINAL e ESPECÍFICA ao conteúdo da mensagem recebida — não repita um modelo genérico, adapte à situação real descrita.
 
@@ -175,8 +178,11 @@ ${MODELOS_REFERENCIA.join('\n\n---\n\n')}
 ${exemplosReais.length > 0 ? `\n\n=== RESPOSTAS REAIS RECENTES (mesma escola) ===\n${exemplosReais.join('\n\n---\n\n')}` : ''}
 === FIM DOS EXEMPLOS ===
 
-Gere exatamente 3 sugestões de resposta diferentes para a mensagem recebida abaixo, cada uma com uma abordagem ligeiramente distinta (ex: mais breve / mais detalhada / com citação legal se aplicável). Responda SOMENTE em formato JSON válido, sem markdown, sem texto antes ou depois, no formato:
-{"sugestoes": ["texto da sugestão 1", "texto da sugestão 2", "texto da sugestão 3"]}`
+${montarInstrucaoDestinatario(destinatarioNormalizado)}
+
+Responda SOMENTE em formato JSON válido, sem markdown, sem texto antes ou depois, no formato:
+{"sugestoes": [{"destinatario": "responsavel", "texto": "..."}, {"destinatario": "equipe", "texto": "..."}]}
+(o campo "destinatario" de cada item deve ser sempre "responsavel" ou "equipe", conforme para quem a mensagem se destina)`
 
   const promptUsuario = `Mensagem recebida:
 Remetente: ${remetente || 'não informado'}
@@ -230,4 +236,4 @@ Texto da mensagem: "${mensagem}"`
     console.error('[gerar-resposta] Erro inesperado:', e.message)
     return res.status(500).json({ erro: 'Erro interno ao gerar resposta' })
   }
-}
+      }
