@@ -589,4 +589,38 @@ export const FUNCIONARIOS_SEED = [
     foto_url: null
   },
   {
-    nome_completo: 
+    nome_completo: 'Michele Da Silva Amaral Pereira',
+    funcao: 'Estagiário(a)',
+    regime_dias: 'Segunda a sexta',
+    atribuicao_central:
+      'Apoio à turma 201',
+    foto_url: null
+  },
+  {
+    nome_completo: 'Mariana De Melo De Alcantara',
+    funcao: 'Estagiário(a)',
+    regime_dias: 'Segunda a sexta',
+    atribuicao_central:
+      'Apoio à turma 101',
+    foto_url: null
+  }
+]
+
+export const FUNCOES = [
+  'Direção',
+  'Orientadora Pedagógica',
+  'Orientadora Educacional',
+  'Secretária Escolar',
+  'Professora AEE',
+  'Professor Regente',
+  'Psicólogo Educacional',
+  'Monitor(a) de Turma',
+  'Agente de Apoio à Inclusão',
+  'Auxiliar de Educação Infantil',
+  'Agente de Apoio',
+  'Auxiliar de Serviços Gerais',
+  'Cozinheiro(a)/Merendeiro(a)',
+  'Motorista',
+  'Zelador(a)',
+  'Estagiário(a)'
+]
