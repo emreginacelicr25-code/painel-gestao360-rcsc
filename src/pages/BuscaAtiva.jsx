@@ -6,9 +6,11 @@ import {
 import { supabase } from '../lib/supabaseClient.js'
 
 // ---------------------------------------------------------------
-// As 5 etapas do fluxo, conforme o Plano de Ação Anual 2026
-// (seção 3.3) — cada uma com o prazo de referência em dias desde
-// a 1ª falta, usado só como orientação visual, não como bloqueio.
+// As 5 etapas do fluxo operacional interno — da identificação ao
+// acionamento do Conselho Tutelar. Os prazos abaixo são orientação
+// visual, não bloqueio: o critério legal de notificação obrigatória
+// (ver ETAPAS_ENSINO mais abaixo) é sinalizado à parte, independente
+// da etapa em que o caso estiver.
 // ---------------------------------------------------------------
 const ETAPAS = [
   { n: 1, titulo: 'Identificação', prazo: 'até o 3º dia', icon: FileWarning },
@@ -39,16 +41,38 @@ const CASO_VAZIO = {
 // ---------------------------------------------------------------
 // IMPORTAÇÃO DE PDF — Relatório de Faltas Não Justificadas (SME)
 // ---------------------------------------------------------------
-// Critério de sinalização (LDB art. 24 §6º — mínimo 75% de frequência;
-// Lei 13.803/2019 — Busca Ativa Escolar; ECA art. 56):
-//   - % FNJ >= 25%  -> crítico (frequência já abaixo do mínimo legal)
-//   - % Freq < 90% (e FNJ < 25%) -> atenção preventiva
-const LIMIAR_CRITICO_FNJ = 25
-const LIMIAR_ATENCAO_FREQ = 90
-
-const CURSO_KEYWORDS = ['EIPREESCOLA', 'AN.INI.', 'CICLO', 'CESP']
+// Critérios oficiais (Documento Orientador — Busca Ativa Escolar,
+// SME Duque de Caxias — e Lei Federal nº 13.803/2019, que altera a
+// LDB para exigir notificação ao Conselho Tutelar quando as faltas
+// ultrapassam 30% do percentual de faltas permitido em lei):
+//
+//   - "atenção"  -> % de frequência abaixo do mínimo exigido na
+//                   etapa de ensino do aluno (60% na Educação
+//                   Infantil, 75% no Ensino Fundamental)
+//   - "crítico"  -> Nº de faltas não justificadas (Nº FNJ) já
+//                   ultrapassa o limite de notificação obrigatória
+//                   (30% sobre o percentual de faltas permitido em
+//                   lei, calculado sobre os dias letivos do ano)
+//
+// O curso, como aparece no relatório da SME, indica a etapa de
+// ensino e as regras aplicáveis a cada aluno.
+const ETAPAS_ENSINO = {
+  EIPREESCOLA: { nome: 'Educação Infantil', frequenciaMinima: 60, faltasPermitidas: 40 },
+  'AN.INI.': { nome: 'Ensino Fundamental', frequenciaMinima: 75, faltasPermitidas: 25 },
+  CICLO: { nome: 'Ensino Fundamental', frequenciaMinima: 75, faltasPermitidas: 25 },
+  CESP: { nome: 'Ensino Fundamental (Educação Especial)', frequenciaMinima: 75, faltasPermitidas: 25 }
+}
+const CURSO_KEYWORDS = Object.keys(ETAPAS_ENSINO)
+const DIAS_LETIVOS_PADRAO = 200 // usado se a configuração não puder ser lida do Supabase
 
 const CASO_VAZIO_KEYS = Object.keys(CASO_VAZIO)
+
+function calcularLimiteNotificacao(curso, diasLetivos) {
+  const regra = ETAPAS_ENSINO[curso]
+  if (!regra) return null
+  const faltasPermitidasNoAno = Math.round(diasLetivos * (regra.faltasPermitidas / 100))
+  return Math.round(faltasPermitidasNoAno * 0.3) // 30% sobre o permitido — Lei 13.803/2019
+}
 
 function diasDesde(dataStr) {
   if (!dataStr) return null
@@ -64,10 +88,9 @@ function mensagemPadrao(nomeAluno, dataFalta) {
 }
 
 // Extrai candidatos de Busca Ativa a partir do texto bruto do PDF de FNJ.
-// Só as colunas %FNJ e %Freq têm casas decimais no relatório — isso é
-// usado como âncora confiável mesmo em linhas onde os números vieram
-// colados sem espaço (falha comum de extração de texto de PDF tabular).
-function extrairCandidatosFNJ(textoCompleto) {
+// A âncora confiável é o final de cada linha: Nº FNJ (inteiro) seguido
+// de %FNJ e %Freq (os únicos campos com casas decimais no relatório).
+function extrairCandidatosFNJ(textoCompleto, diasLetivos = DIAS_LETIVOS_PADRAO) {
   const linhas = textoCompleto.split('\n').map((l) => l.trim()).filter(Boolean)
   const candidatos = []
 
@@ -80,13 +103,14 @@ function extrairCandidatosFNJ(textoCompleto) {
 
     if (!idxCurso) continue
 
-    // pega todos os números decimais (só existem em %FNJ e %Freq)
-    const decimais = linha.match(/\d{1,3}\.\d{2}/g)
-    if (!decimais || decimais.length < 2) continue
+    // Nº FNJ (inteiro) + %FNJ + %Freq no final da linha
+    const finalMatch = linha.match(/(\d+)\s+(\d{1,3}\.\d{2})\s+(\d{1,3}\.\d{2})\s*$/)
+    if (!finalMatch) continue
 
-    const percentualFreq = parseFloat(decimais[decimais.length - 1])
-    const percentualFNJ = parseFloat(decimais[decimais.length - 2])
-    if (Number.isNaN(percentualFreq) || Number.isNaN(percentualFNJ)) continue
+    const numFNJ = parseInt(finalMatch[1], 10)
+    const percentualFNJ = parseFloat(finalMatch[2])
+    const percentualFreq = parseFloat(finalMatch[3])
+    if (Number.isNaN(numFNJ) || Number.isNaN(percentualFNJ) || Number.isNaN(percentualFreq)) continue
     if (percentualFreq > 100 || percentualFNJ > 100) continue
 
     // matrícula = dígitos no início da linha
@@ -99,14 +123,16 @@ function extrairCandidatosFNJ(textoCompleto) {
     if (!nomeBruto || nomeBruto.length < 3) continue
 
     // turma: melhor esforço — pega o trecho logo após o código de curso
-    // até o primeiro número de 3+ dígitos ou palavra "AEE"
     const restante = linha.slice(idxCurso.i + idxCurso.k.length, linha.length)
     const turmaMatch = restante.match(/^[A-Za-zÀ-ÿ0-9]{1,10}/)
     const turmaBruta = turmaMatch ? turmaMatch[0] : ''
 
+    const regraEnsino = ETAPAS_ENSINO[idxCurso.k]
+    const limiteNotificacao = calcularLimiteNotificacao(idxCurso.k, diasLetivos)
+
     let nivel = null
-    if (percentualFNJ >= LIMIAR_CRITICO_FNJ) nivel = 'critico'
-    else if (percentualFreq < LIMIAR_ATENCAO_FREQ) nivel = 'atencao'
+    if (limiteNotificacao !== null && numFNJ >= limiteNotificacao) nivel = 'critico'
+    else if (percentualFreq < regraEnsino.frequenciaMinima) nivel = 'atencao'
 
     if (!nivel) continue
 
@@ -115,8 +141,12 @@ function extrairCandidatosFNJ(textoCompleto) {
       matricula,
       nome: nomeBruto,
       turma: turmaBruta,
+      curso: idxCurso.k,
+      etapaEnsino: regraEnsino.nome,
+      numFNJ,
       percentualFNJ,
       percentualFreq,
+      limiteNotificacao,
       nivel,
       selecionado: true
     })
@@ -132,15 +162,20 @@ function extrairCandidatosFNJ(textoCompleto) {
     return true
   })
 }
+
 function CasoCard({ caso, onAvancar, onVoltar, onCopiarMensagem, copiado }) {
   const dias = diasDesde(caso.data_primeira_falta)
   const urgente = dias !== null && dias >= 10 && caso.etapa_atual < 5
-  const critico = dias !== null && dias >= 30
+  const abandono30dias = dias !== null && dias >= 30
 
   return (
     <div
       className={`bg-paper-raised border rounded-lg p-4 space-y-2.5 ${
-        critico ? 'border-signal' : urgente ? 'border-moon-deep' : 'border-paper-line'
+        abandono30dias || caso.elegivel_notificacao
+          ? 'border-signal'
+          : urgente
+          ? 'border-moon-deep'
+          : 'border-paper-line'
       }`}
     >
       <div className="flex items-start justify-between gap-2">
@@ -156,15 +191,29 @@ function CasoCard({ caso, onAvancar, onVoltar, onCopiarMensagem, copiado }) {
       <div className="flex items-center gap-2 text-xs text-night/60">
         <span className="font-mono">{caso.faltas_acumuladas || 0} faltas</span>
         {dias !== null && (
-          <span className={`font-mono ${critico ? 'text-signal font-semibold' : urgente ? 'text-moon-deep font-semibold' : ''}`}>
+          <span className={`font-mono ${abandono30dias ? 'text-signal font-semibold' : urgente ? 'text-moon-deep font-semibold' : ''}`}>
             · {dias} dias sem retorno
           </span>
         )}
       </div>
 
-      {critico && (
+      {caso.curso && (
+        <p className="text-[11px] text-night/45">
+          {caso.curso} · Nº FNJ {caso.num_fnj ?? '—'}
+          {caso.percentual_freq != null ? ` · Freq. ${Number(caso.percentual_freq).toFixed(1)}%` : ''}
+        </p>
+      )}
+
+      {caso.elegivel_notificacao && (
+        <p className="text-[11px] text-signal font-medium flex items-center gap-1">
+          <ShieldAlert size={12} /> Notificação ao Conselho Tutelar obrigatória (Lei nº 13.803/2019)
+        </p>
+      )}
+
+      {abandono30dias && (
         <p className="text-[11px] text-signal flex items-center gap-1">
-          <AlertTriangle size={12} /> 30+ dias — caracteriza abandono (Art. 48, Res. 003/2025)
+          <AlertTriangle size={12} /> 30+ dias sem retorno — caracteriza abandono escolar (Documento
+          Orientador de Busca Ativa Escolar / ECA art. 56); reencaminhar ao Conselho Tutelar
         </p>
       )}
 
@@ -197,20 +246,26 @@ function CasoCard({ caso, onAvancar, onVoltar, onCopiarMensagem, copiado }) {
   )
 }
 
-function ModalImportarPDF({ onFechar, casosExistentes, onConfirmar }) {
+function ModalImportarPDF({ onFechar, casosExistentes, onConfirmar, diasLetivos }) {
   const inputRef = useRef(null)
   const [processando, setProcessando] = useState(false)
   const [erro, setErro] = useState(null)
   const [candidatos, setCandidatos] = useState(null)
+  const [nomeArquivo, setNomeArquivo] = useState(null)
 
   const nomesExistentes = useMemo(
     () => new Set(casosExistentes.map((c) => (c.nome_aluno || '').toLowerCase().trim())),
+    [casosExistentes]
+  )
+  const matriculasExistentes = useMemo(
+    () => new Set(casosExistentes.map((c) => c.matricula).filter(Boolean)),
     [casosExistentes]
   )
 
   async function lerPDF(file) {
     setProcessando(true)
     setErro(null)
+    setNomeArquivo(file.name)
     try {
       const pdfjsLib = await import('pdfjs-dist/build/pdf')
       pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -246,18 +301,19 @@ function ModalImportarPDF({ onFechar, casosExistentes, onConfirmar }) {
         textoCompleto += linhasDaPagina.join('\n') + '\n'
       }
 
-      const extraidos = extrairCandidatosFNJ(textoCompleto)
+      const extraidos = extrairCandidatosFNJ(textoCompleto, diasLetivos)
       if (extraidos.length === 0) {
         setErro(
-          'Nenhum aluno com FNJ ≥ 25% ou frequência abaixo de 90% foi encontrado neste PDF. Confira se o arquivo é o relatório de Faltas Não Justificadas correto.'
+          'Nenhum aluno atingiu o critério de atenção (frequência abaixo do mínimo da etapa de ensino) ou de notificação obrigatória (30% sobre o percentual de faltas permitido em lei) neste PDF. Confira se o arquivo é o relatório de Faltas Não Justificadas correto.'
         )
       }
       setCandidatos(
-        extraidos.map((c) => ({
-          ...c,
-          jaExiste: nomesExistentes.has(c.nome.toLowerCase().trim()),
-          selecionado: !nomesExistentes.has(c.nome.toLowerCase().trim())
-        }))
+        extraidos.map((c) => {
+          const existe =
+            (c.matricula && matriculasExistentes.has(c.matricula)) ||
+            nomesExistentes.has(c.nome.toLowerCase().trim())
+          return { ...c, jaExiste: existe, selecionado: !existe }
+        })
       )
     } catch (e) {
       console.error('[BuscaAtiva] Erro ao ler PDF:', e)
@@ -284,8 +340,10 @@ function ModalImportarPDF({ onFechar, casosExistentes, onConfirmar }) {
           <div>
             <h2 className="font-display text-xl text-night">Importar do relatório de FNJ (SME)</h2>
             <p className="text-xs text-night/50 mt-0.5">
-              Critério: FNJ ≥ 25% (crítico, abaixo do mínimo legal de 75% — LDB art. 24 §6º) ou
-              frequência abaixo de 90% (atenção preventiva). Base: Lei 13.803/2019 e ECA art. 56.
+              Critério legal (Lei nº 13.803/2019): notificação obrigatória ao Conselho Tutelar quando
+              as faltas ultrapassam 30% do percentual permitido — 25% no Fundamental, 40% na Educação
+              Infantil — calculado sobre {diasLetivos} dias letivos. Abaixo disso, frequência menor que
+              o mínimo da etapa (75%/60%) entra como atenção preventiva.
             </p>
           </div>
           <button onClick={onFechar} className="text-night/40 hover:text-night shrink-0">
@@ -332,7 +390,7 @@ function ModalImportarPDF({ onFechar, casosExistentes, onConfirmar }) {
         {candidatos && candidatos.length > 0 && (
           <>
             <p className="text-xs text-night/50 mb-3">
-              {candidatos.length} aluno(s) sinalizado(s) — revise nomes e turmas antes de confirmar.
+              {candidatos.length} aluno(s) sinalizado(s) — revise nomes e turmas antes de confirmar.{' '}
               {selecionados.length} selecionado(s) para importar.
             </p>
             <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
@@ -357,7 +415,7 @@ function ModalImportarPDF({ onFechar, casosExistentes, onConfirmar }) {
                           c.nivel === 'critico' ? 'bg-signal/15 text-signal' : 'bg-moon/20 text-moon-deep'
                         }`}
                       >
-                        {c.nivel === 'critico' ? 'crítico' : 'atenção'}
+                        {c.nivel === 'critico' ? 'notificação obrigatória' : 'atenção'}
                       </span>
                       {c.jaExiste && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-night/10 text-night/50">
@@ -366,7 +424,9 @@ function ModalImportarPDF({ onFechar, casosExistentes, onConfirmar }) {
                       )}
                     </div>
                     <p className="text-xs text-night/50 font-mono mt-0.5">
-                      FNJ {c.percentualFNJ.toFixed(2)}% · Frequência {c.percentualFreq.toFixed(2)}%
+                      {c.etapaEnsino} · Nº FNJ {c.numFNJ}
+                      {c.limiteNotificacao != null ? ` (limite ${c.limiteNotificacao})` : ''} · Freq.{' '}
+                      {c.percentualFreq.toFixed(2)}%
                       {c.matricula ? ` · matrícula ${c.matricula}` : ''}
                     </p>
                     <input
@@ -395,7 +455,7 @@ function ModalImportarPDF({ onFechar, casosExistentes, onConfirmar }) {
               </button>
               <button
                 disabled={selecionados.length === 0}
-                onClick={() => onConfirmar(selecionados)}
+                onClick={() => onConfirmar(selecionados, nomeArquivo)}
                 className="text-sm bg-night text-white font-medium px-4 py-2 rounded-lg hover:bg-night-soft disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Importar {selecionados.length || ''} caso(s)
@@ -407,6 +467,7 @@ function ModalImportarPDF({ onFechar, casosExistentes, onConfirmar }) {
     </div>
   )
 }
+
 export default function BuscaAtiva() {
   const [casos, setCasos] = useState([])
   const [carregando, setCarregando] = useState(true)
@@ -415,10 +476,21 @@ export default function BuscaAtiva() {
   const [modalImportarAberto, setModalImportarAberto] = useState(false)
   const [novoCaso, setNovoCaso] = useState(CASO_VAZIO)
   const [idCopiado, setIdCopiado] = useState(null)
+  const [diasLetivos, setDiasLetivos] = useState(DIAS_LETIVOS_PADRAO)
+  const [anoLetivo, setAnoLetivo] = useState(new Date().getFullYear())
 
   useEffect(() => {
     carregarCasos()
+    carregarConfig()
   }, [])
+
+  async function carregarConfig() {
+    const { data, error } = await supabase.from('busca_ativa_config').select('*').eq('id', 1).maybeSingle()
+    if (!error && data) {
+      setDiasLetivos(data.dias_letivos)
+      setAnoLetivo(data.ano_letivo)
+    }
+  }
 
   async function carregarCasos() {
     setCarregando(true)
@@ -440,7 +512,7 @@ export default function BuscaAtiva() {
 
   async function salvarNovoCaso(e) {
     e.preventDefault()
-    const payload = { ...novoCaso, criado_em: new Date().toISOString() }
+    const payload = { ...novoCaso, ano_letivo: anoLetivo, criado_em: new Date().toISOString() }
     const { data, error } = await supabase.from('busca_ativa_casos').insert(payload).select()
 
     if (error) {
@@ -452,15 +524,23 @@ export default function BuscaAtiva() {
     setModalAberto(false)
   }
 
-  async function importarCandidatosPDF(selecionados) {
+  async function importarCandidatosPDF(selecionados, nomeArquivo) {
     const hoje = new Date().toISOString().slice(0, 10)
     const novosPayloads = selecionados.map((c) => ({
       nome_aluno: c.nome,
-      turma: c.turma ? `${c.turma} (FNJ ${c.percentualFNJ.toFixed(1)}%)` : `FNJ ${c.percentualFNJ.toFixed(1)}%`,
+      matricula: c.matricula,
+      curso: c.curso,
+      turma: c.turma,
+      ano_letivo: anoLetivo,
+      percentual_fnj: c.percentualFNJ,
+      percentual_freq: c.percentualFreq,
+      num_fnj: c.numFNJ,
+      elegivel_notificacao: c.nivel === 'critico',
       data_primeira_falta: hoje,
-      faltas_acumuladas: 0,
+      faltas_acumuladas: c.numFNJ || 0,
       status: 'ativo',
       etapa_atual: 1,
+      origem_importacao: nomeArquivo || null,
       criado_em: new Date().toISOString()
     }))
 
@@ -514,7 +594,8 @@ export default function BuscaAtiva() {
       const d = diasDesde(c.data_primeira_falta)
       return d !== null && d >= 30
     })
-    return { ativos: ativos.length, criticos: criticos.length, total: casos.length }
+    const elegiveis = ativos.filter((c) => c.elegivel_notificacao)
+    return { ativos: ativos.length, criticos: criticos.length, elegiveis: elegiveis.length, total: casos.length }
   }, [casos])
 
   return (
@@ -522,156 +603,164 @@ export default function BuscaAtiva() {
       <header className="mb-6 flex items-start justify-between gap-4">
         <div>
           <p className="font-mono text-xs tracking-widest text-moon-deep uppercase mb-2">
-Combate à evasão escolar
-        </p>
-        <h1 className="font-display text-3xl text-night">Busca Ativa</h1>
-        <p className="text-night/60 mt-1 max-w-xl">
-          Fluxo de 5 etapas conforme a Lei Estadual nº 7.614/2017 e o ECA (Art. 56) — da
-          identificação da falta até o acionamento do Conselho Tutelar.
-        </p>
-      </div>
-      <div className="flex gap-2 shrink-0">
-        <button
-          onClick={() => setModalImportarAberto(true)}
-          className="flex items-center gap-2 bg-paper-raised border border-paper-line text-night text-sm font-medium px-3 py-2.5 rounded-lg hover:bg-night/5 transition-colors"
-        >
-          <Upload size={16} /> Importar PDF (SME)
-        </button>
-        <button
-          onClick={() => setModalAberto(true)}
-          className="flex items-center gap-2 bg-night text-white text-sm font-medium px-4 py-2.5 rounded-lg hover:bg-night-soft transition-colors"
-        >
-          <Plus size={16} /> Novo caso
-        </button>
-      </div>
-    </header>
+            Combate à evasão escolar
+          </p>
+          <h1 className="font-display text-3xl text-night">Busca Ativa</h1>
+          <p className="text-night/60 mt-1 max-w-xl">
+            Fluxo de 5 etapas — da identificação da falta até o acionamento do Conselho Tutelar —
+            seguindo o Documento Orientador de Busca Ativa Escolar da SME e a Lei Federal nº 13.803/2019
+            (ECA arts. 55/56).
+          </p>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <button
+            onClick={() => setModalImportarAberto(true)}
+            className="flex items-center gap-2 bg-paper-raised border border-paper-line text-night text-sm font-medium px-3 py-2.5 rounded-lg hover:bg-night/5 transition-colors"
+          >
+            <Upload size={16} /> Importar PDF (SME)
+          </button>
+          <button
+            onClick={() => setModalAberto(true)}
+            className="flex items-center gap-2 bg-night text-white text-sm font-medium px-4 py-2.5 rounded-lg hover:bg-night-soft transition-colors"
+          >
+            <Plus size={16} /> Novo caso
+          </button>
+        </div>
+      </header>
 
-    {erroConexao && (
-      <div className="mb-6 text-sm bg-moon/10 border border-moon/30 text-moon-deep px-4 py-3 rounded-lg">
-        Exibindo dados de exemplo — conecte o Supabase para persistir os registros reais.
-      </div>
-    )}
+      {erroConexao && (
+        <div className="mb-6 text-sm bg-moon/10 border border-moon/30 text-moon-deep px-4 py-3 rounded-lg">
+          Exibindo dados de exemplo — conecte o Supabase para persistir os registros reais.
+        </div>
+      )}
 
-    <div className="grid grid-cols-3 gap-4 mb-8">
-      <div className="bg-paper-raised border border-paper-line rounded-card p-4">
-        <p className="text-2xl font-display text-night">{stats.ativos}</p>
-        <p className="text-sm text-night/60">Casos ativos em acompanhamento</p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="bg-paper-raised border border-paper-line rounded-card p-4">
+          <p className="text-2xl font-display text-night">{stats.ativos}</p>
+          <p className="text-sm text-night/60">Casos ativos em acompanhamento</p>
+        </div>
+        <div className="bg-paper-raised border border-paper-line rounded-card p-4">
+          <p className={`text-2xl font-display ${stats.elegiveis > 0 ? 'text-signal' : 'text-sage'}`}>
+            {stats.elegiveis}
+          </p>
+          <p className="text-sm text-night/60">Notificação ao CT obrigatória (Lei 13.803/2019)</p>
+        </div>
+        <div className="bg-paper-raised border border-paper-line rounded-card p-4">
+          <p className={`text-2xl font-display ${stats.criticos > 0 ? 'text-signal' : 'text-sage'}`}>
+            {stats.criticos}
+          </p>
+          <p className="text-sm text-night/60">Casos com 30+ dias (meta: zero)</p>
+        </div>
+        <div className="bg-paper-raised border border-paper-line rounded-card p-4">
+          <p className="text-2xl font-display text-night">{stats.total}</p>
+          <p className="text-sm text-night/60">Total de casos no ano</p>
+        </div>
       </div>
-      <div className="bg-paper-raised border border-paper-line rounded-card p-4">
-        <p className={`text-2xl font-display ${stats.criticos > 0 ? 'text-signal' : 'text-sage'}`}>
-          {stats.criticos}
-        </p>
-        <p className="text-sm text-night/60">Casos com 30+ dias (meta: zero)</p>
-      </div>
-      <div className="bg-paper-raised border border-paper-line rounded-card p-4">
-        <p className="text-2xl font-display text-night">{stats.total}</p>
-        <p className="text-sm text-night/60">Total de casos no ano</p>
-      </div>
-    </div>
 
-    {carregando ? (
-      <p className="text-sm text-night/50">Carregando casos…</p>
-    ) : (
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        {ETAPAS.map((etapa) => (
-          <div key={etapa.n} className="min-w-0">
-            <div className="flex items-center gap-2 mb-3 px-1">
-              <etapa.icon size={15} className="text-night/50 shrink-0" />
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-night truncate">{etapa.titulo}</p>
-                <p className="text-[10px] text-night/40 font-mono">{etapa.prazo}</p>
+      {carregando ? (
+        <p className="text-sm text-night/50">Carregando casos…</p>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          {ETAPAS.map((etapa) => (
+            <div key={etapa.n} className="min-w-0">
+              <div className="flex items-center gap-2 mb-3 px-1">
+                <etapa.icon size={15} className="text-night/50 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-night truncate">{etapa.titulo}</p>
+                  <p className="text-[10px] text-night/40 font-mono">{etapa.prazo}</p>
+                </div>
+              </div>
+              <div className="space-y-3">
+                {porEtapa[etapa.n].length === 0 ? (
+                  <p className="text-xs text-night/30 italic px-1">Sem casos nesta etapa</p>
+                ) : (
+                  porEtapa[etapa.n].map((caso) => (
+                    <CasoCard
+                      key={caso.id}
+                      caso={caso}
+                      onAvancar={(c) => mudarEtapa(c, 1)}
+                      onVoltar={(c) => mudarEtapa(c, -1)}
+                      onCopiarMensagem={copiarMensagem}
+                      copiado={idCopiado === caso.id}
+                    />
+                  ))
+                )}
               </div>
             </div>
-            <div className="space-y-3">
-              {porEtapa[etapa.n].length === 0 ? (
-                <p className="text-xs text-night/30 italic px-1">Sem casos nesta etapa</p>
-              ) : (
-                porEtapa[etapa.n].map((caso) => (
-                  <CasoCard
-                    key={caso.id}
-                    caso={caso}
-                    onAvancar={(c) => mudarEtapa(c, 1)}
-                    onVoltar={(c) => mudarEtapa(c, -1)}
-                    onCopiarMensagem={copiarMensagem}
-                    copiado={idCopiado === caso.id}
-                  />
-                ))
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-    )}
+          ))}
+        </div>
+      )}
 
-    {modalAberto && (
-      <div className="fixed inset-0 bg-night/40 flex items-center justify-center p-4 z-50">
-        <div className="bg-paper-raised rounded-card w-full max-w-md p-6">
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="font-display text-xl text-night">Novo caso de Busca Ativa</h2>
-            <button onClick={() => setModalAberto(false)} className="text-night/40 hover:text-night">
-              <X size={20} />
-            </button>
-          </div>
-          <form onSubmit={salvarNovoCaso} className="space-y-4">
-            <div>
-              <label className="text-xs font-medium text-night/60">Nome do aluno</label>
-              <input
-                required
-                className="mt-1 w-full border border-paper-line rounded-lg px-3 py-2 text-sm"
-                value={novoCaso.nome_aluno}
-                onChange={(e) => setNovoCaso({ ...novoCaso, nome_aluno: e.target.value })}
-              />
+      {modalAberto && (
+        <div className="fixed inset-0 bg-night/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-paper-raised rounded-card w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="font-display text-xl text-night">Novo caso de Busca Ativa</h2>
+              <button onClick={() => setModalAberto(false)} className="text-night/40 hover:text-night">
+                <X size={20} />
+              </button>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={salvarNovoCaso} className="space-y-4">
               <div>
-                <label className="text-xs font-medium text-night/60">Turma</label>
+                <label className="text-xs font-medium text-night/60">Nome do aluno</label>
                 <input
                   required
                   className="mt-1 w-full border border-paper-line rounded-lg px-3 py-2 text-sm"
-                  value={novoCaso.turma}
-                  onChange={(e) => setNovoCaso({ ...novoCaso, turma: e.target.value })}
+                  value={novoCaso.nome_aluno}
+                  onChange={(e) => setNovoCaso({ ...novoCaso, nome_aluno: e.target.value })}
                 />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-medium text-night/60">Turma</label>
+                  <input
+                    required
+                    className="mt-1 w-full border border-paper-line rounded-lg px-3 py-2 text-sm"
+                    value={novoCaso.turma}
+                    onChange={(e) => setNovoCaso({ ...novoCaso, turma: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-night/60">Faltas acumuladas</label>
+                  <input
+                    type="number"
+                    min={0}
+                    className="mt-1 w-full border border-paper-line rounded-lg px-3 py-2 text-sm"
+                    value={novoCaso.faltas_acumuladas}
+                    onChange={(e) => setNovoCaso({ ...novoCaso, faltas_acumuladas: Number(e.target.value) })}
+                  />
+                </div>
               </div>
               <div>
-                <label className="text-xs font-medium text-night/60">Faltas acumuladas</label>
+                <label className="text-xs font-medium text-night/60">Data da 1ª falta</label>
                 <input
-                  type="number"
-                  min={0}
+                  type="date"
+                  required
                   className="mt-1 w-full border border-paper-line rounded-lg px-3 py-2 text-sm"
-                  value={novoCaso.faltas_acumuladas}
-                  onChange={(e) => setNovoCaso({ ...novoCaso, faltas_acumuladas: Number(e.target.value) })}
+                  value={novoCaso.data_primeira_falta}
+                  onChange={(e) => setNovoCaso({ ...novoCaso, data_primeira_falta: e.target.value })}
                 />
               </div>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-night/60">Data da 1ª falta</label>
-              <input
-                type="date"
-                required
-                className="mt-1 w-full border border-paper-line rounded-lg px-3 py-2 text-sm"
-                value={novoCaso.data_primeira_falta}
-                onChange={(e) => setNovoCaso({ ...novoCaso, data_primeira_falta: e.target.value })}
-              />
-            </div>
-            <button
-              type="submit"
-              className="w-full bg-night text-white text-sm font-medium py-2.5 rounded-lg hover:bg-night-soft transition-colors"
-            >
-              Iniciar acompanhamento
-            </button>
-          </form>
+              <button
+                type="submit"
+                className="w-full bg-night text-white text-sm font-medium py-2.5 rounded-lg hover:bg-night-soft transition-colors"
+              >
+                Iniciar acompanhamento
+              </button>
+            </form>
+          </div>
         </div>
-      </div>
-    )}
+      )}
 
-    {modalImportarAberto && (
-      <ModalImportarPDF
-        casosExistentes={casos}
-        onFechar={() => setModalImportarAberto(false)}
-        onConfirmar={importarCandidatosPDF}
-      />
-    )}
-  </div>
+      {modalImportarAberto && (
+        <ModalImportarPDF
+          casosExistentes={casos}
+          diasLetivos={diasLetivos}
+          onFechar={() => setModalImportarAberto(false)}
+          onConfirmar={importarCandidatosPDF}
+        />
+      )}
+    </div>
   )
 }
 
