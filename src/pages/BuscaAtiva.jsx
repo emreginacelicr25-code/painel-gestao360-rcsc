@@ -324,7 +324,7 @@ function ModalImportarPDF({ onFechar, casosExistentes, onConfirmar, diasLetivos 
       )
     } catch (e) {
       console.error('[BuscaAtiva] Erro ao ler PDF:', e)
-      setErro('Não foi possível ler este PDF. Confira se o arquivo não está corrompido ou protegido por senha.')
+      setErro(`Não foi possível ler este PDF (detalhe técnico: ${e?.message || e}). Confira se o arquivo não está corrompido ou protegido por senha.`)
     } finally {
       setProcessando(false)
     }
