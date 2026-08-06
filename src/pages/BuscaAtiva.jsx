@@ -4,6 +4,7 @@ import {
   Users, ShieldAlert, Upload, Loader2, FileText
 } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient.js'
+import FichaFicai from '../components/FichaFicai.jsx'
 
 // ---------------------------------------------------------------
 // As 5 etapas do fluxo operacional interno — da identificação ao
@@ -163,7 +164,7 @@ function extrairCandidatosFNJ(textoCompleto, diasLetivos = DIAS_LETIVOS_PADRAO) 
   })
 }
 
-function CasoCard({ caso, onAvancar, onVoltar, onCopiarMensagem, copiado }) {
+function CasoCard({ caso, onAvancar, onVoltar, onCopiarMensagem, copiado, onGerarFicai }) {
   const dias = diasDesde(caso.data_primeira_falta)
   const urgente = dias !== null && dias >= 10 && caso.etapa_atual < 5
   const abandono30dias = dias !== null && dias >= 30
@@ -228,6 +229,12 @@ function CasoCard({ caso, onAvancar, onVoltar, onCopiarMensagem, copiado }) {
           </button>
         )}
         <div className="flex-1" />
+        <button
+          onClick={() => onGerarFicai(caso)}
+          className="text-xs text-signal hover:underline px-2 py-1"
+        >
+          Gerar FICAI
+        </button>
         {caso.etapa_atual > 1 && (
           <button onClick={() => onVoltar(caso)} className="text-xs text-night/40 hover:text-night px-2 py-1">
             ← voltar
@@ -478,6 +485,7 @@ export default function BuscaAtiva() {
   const [idCopiado, setIdCopiado] = useState(null)
   const [diasLetivos, setDiasLetivos] = useState(DIAS_LETIVOS_PADRAO)
   const [anoLetivo, setAnoLetivo] = useState(new Date().getFullYear())
+  const [ficaiCaso, setFicaiCaso] = useState(null)
 
   useEffect(() => {
     carregarCasos()
@@ -682,6 +690,7 @@ export default function BuscaAtiva() {
                       onVoltar={(c) => mudarEtapa(c, -1)}
                       onCopiarMensagem={copiarMensagem}
                       copiado={idCopiado === caso.id}
+                      onGerarFicai={setFicaiCaso}
                     />
                   ))
                 )}
@@ -760,6 +769,8 @@ export default function BuscaAtiva() {
           onConfirmar={importarCandidatosPDF}
         />
       )}
+
+      {ficaiCaso && <FichaFicai caso={ficaiCaso} onFechar={() => setFicaiCaso(null)} />}
     </div>
   )
 }
