@@ -164,10 +164,32 @@ function extrairCandidatosFNJ(textoCompleto, diasLetivos = DIAS_LETIVOS_PADRAO) 
   })
 }
 
-function CasoCard({ caso, onAvancar, onVoltar, onCopiarMensagem, copiado, onGerarFicai }) {
+const ETAPA_TITULO_POR_N = Object.fromEntries(ETAPAS.map((e) => [e.n, e.titulo]))
+
+function CasoCard({ caso, onAvancar, onVoltar, onCopiarMensagem, copiado, onGerarFicai, onSalvarObservacao }) {
   const dias = diasDesde(caso.data_primeira_falta)
   const urgente = dias !== null && dias >= 10 && caso.etapa_atual < 5
   const abandono30dias = dias !== null && dias >= 30
+
+  const observacoes = caso.observacoes_por_etapa || {}
+  const [textoObs, setTextoObs] = useState(observacoes[caso.etapa_atual] || '')
+  const [obsSalva, setObsSalva] = useState(false)
+
+  useEffect(() => {
+    setTextoObs(observacoes[caso.etapa_atual] || '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caso.id, caso.etapa_atual])
+
+  async function salvarObs() {
+    if (textoObs === (observacoes[caso.etapa_atual] || '')) return
+    await onSalvarObservacao(caso, caso.etapa_atual, textoObs)
+    setObsSalva(true)
+    setTimeout(() => setObsSalva(false), 2000)
+  }
+
+  const etapasComNota = Object.entries(observacoes)
+    .filter(([et, txt]) => txt && Number(et) !== caso.etapa_atual)
+    .sort((a, b) => Number(a[0]) - Number(b[0]))
 
   return (
     <div
@@ -218,36 +240,64 @@ function CasoCard({ caso, onAvancar, onVoltar, onCopiarMensagem, copiado, onGera
         </p>
       )}
 
-      <div className="flex items-center gap-2 pt-1">
+      {etapasComNota.length > 0 && (
+        <div className="text-[11px] text-night/50 space-y-1 border-t border-paper-line pt-2">
+          {etapasComNota.map(([et, txt]) => (
+            <p key={et}>
+              <span className="font-medium text-night/70">{ETAPA_TITULO_POR_N[et]}:</span> {txt}
+            </p>
+          ))}
+        </div>
+      )}
+
+      <div className="pt-2 border-t border-paper-line">
+        <div className="flex items-center justify-between">
+          <label className="text-[10px] uppercase tracking-wide text-night/40">
+            Observação — {ETAPA_TITULO_POR_N[caso.etapa_atual]}
+          </label>
+          {obsSalva && <span className="text-[10px] text-sage">salvo</span>}
+        </div>
+        <textarea
+          className="mt-1 w-full text-xs border border-paper-line rounded-md px-2 py-1.5 bg-white/60 focus:outline-none min-h-[46px]"
+          value={textoObs}
+          onChange={(e) => setTextoObs(e.target.value)}
+          onBlur={salvarObs}
+          placeholder="Informações recebidas nesta etapa..."
+        />
+      </div>
+
+      <div className="space-y-2 pt-1">
         {caso.etapa_atual === 2 && (
           <button
             onClick={() => onCopiarMensagem(caso)}
-            className="text-xs flex items-center gap-1 text-night/60 hover:text-night border border-paper-line rounded-md px-2 py-1"
+            className="w-full text-xs flex items-center justify-center gap-1 text-night/60 hover:text-night border border-paper-line rounded-md px-2 py-1.5"
           >
             {copiado ? <Check size={12} /> : <Copy size={12} />}
             {copiado ? 'Copiado' : 'Copiar mensagem'}
           </button>
         )}
-        <div className="flex-1" />
-        <button
-          onClick={() => onGerarFicai(caso)}
-          className="text-xs text-signal hover:underline px-2 py-1"
-        >
-          Gerar FICAI
-        </button>
-        {caso.etapa_atual > 1 && (
-          <button onClick={() => onVoltar(caso)} className="text-xs text-night/40 hover:text-night px-2 py-1">
-            ← voltar
-          </button>
-        )}
-        {caso.etapa_atual < 5 && (
+        <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => onAvancar(caso)}
-            className="text-xs bg-night text-white px-2.5 py-1 rounded-md hover:bg-night-soft"
+            onClick={() => onGerarFicai(caso)}
+            className="text-xs text-signal hover:underline px-2 py-1"
           >
-            avançar →
+            Gerar FICAI
           </button>
-        )}
+          <div className="flex-1" />
+          {caso.etapa_atual > 1 && (
+            <button onClick={() => onVoltar(caso)} className="text-xs text-night/40 hover:text-night px-2 py-1">
+              ← voltar
+            </button>
+          )}
+          {caso.etapa_atual < 5 && (
+            <button
+              onClick={() => onAvancar(caso)}
+              className="text-xs bg-night text-white px-2.5 py-1 rounded-md hover:bg-night-soft"
+            >
+              avançar →
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -581,6 +631,14 @@ export default function BuscaAtiva() {
     }
   }
 
+  async function salvarObservacao(caso, etapa, texto) {
+    const novasObs = { ...(caso.observacoes_por_etapa || {}), [etapa]: texto }
+    setCasos((prev) => prev.map((c) => (c.id === caso.id ? { ...c, observacoes_por_etapa: novasObs } : c)))
+    if (!String(caso.id).startsWith('local-')) {
+      await supabase.from('busca_ativa_casos').update({ observacoes_por_etapa: novasObs }).eq('id', caso.id)
+    }
+  }
+
   function copiarMensagem(caso) {
     const texto = mensagemPadrao(caso.nome_aluno, caso.data_primeira_falta)
     navigator.clipboard?.writeText(texto)
@@ -691,6 +749,7 @@ export default function BuscaAtiva() {
                       onCopiarMensagem={copiarMensagem}
                       copiado={idCopiado === caso.id}
                       onGerarFicai={setFicaiCaso}
+                      onSalvarObservacao={salvarObservacao}
                     />
                   ))
                 )}
