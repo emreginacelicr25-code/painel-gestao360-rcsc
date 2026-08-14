@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Printer, Save } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient.js'
+import brasao from '../assets/brasao.png'
 
 const MESES_ORDEM = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
 
@@ -286,15 +287,18 @@ export default function FichaFicai({ caso, onFechar }) {
 
         <div id="ficai-print-area" className="bg-white text-black">
           {/* Cabeçalho */}
-          <div className="text-center text-[11px] leading-tight mb-2">
-            <p className="font-bold">ESTADO DO RIO DE JANEIRO</p>
-            <p className="font-bold">PREFEITURA MUNICIPAL DE DUQUE DE CAXIAS</p>
-            <p className="font-bold">SECRETARIA MUNICIPAL DE EDUCAÇÃO</p>
-            <p className="font-bold">{DADOS_ESCOLA.nome}</p>
-            <p className="italic mt-1">{DADOS_ESCOLA.endereco}</p>
-            <p className="italic">
-              {DADOS_ESCOLA.telefone} Email: {DADOS_ESCOLA.email}
-            </p>
+          <div className="flex items-center gap-3 mb-2">
+            <img src={brasao} alt="Brasão de Duque de Caxias" className="w-16 h-16 object-contain shrink-0" />
+            <div className="flex-1 text-center text-[11px] leading-tight">
+              <p className="font-bold">ESTADO DO RIO DE JANEIRO</p>
+              <p className="font-bold">PREFEITURA MUNICIPAL DE DUQUE DE CAXIAS</p>
+              <p className="font-bold">SECRETARIA MUNICIPAL DE EDUCAÇÃO</p>
+              <p className="font-bold">{DADOS_ESCOLA.nome}</p>
+              <p className="italic mt-1">{DADOS_ESCOLA.endereco}</p>
+              <p className="italic">
+                {DADOS_ESCOLA.telefone} Email: {DADOS_ESCOLA.email}
+              </p>
+            </div>
           </div>
 
           <table className="w-full border-collapse border border-black/70 mb-0">
