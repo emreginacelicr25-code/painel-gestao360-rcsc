@@ -64,7 +64,7 @@ const ETAPAS_ENSINO = {
   CESP: { nome: 'Ensino Fundamental (Educação Especial)', frequenciaMinima: 75, faltasPermitidas: 25 }
 }
 const CURSO_KEYWORDS = Object.keys(ETAPAS_ENSINO)
-const DIAS_LETIVOS_PADRAO = 200 // usado se a configuração não puder ser lida do Supabase
+const DIAS_LETIVOS_PADRAO = 206 // fallback se a configuração não puder ser lida do Supabase — calendário 2026: 56+54+42+54
 
 const CASO_VAZIO_KEYS = Object.keys(CASO_VAZIO)
 
@@ -104,13 +104,26 @@ function extrairCandidatosFNJ(textoCompleto, diasLetivos = DIAS_LETIVOS_PADRAO) 
 
     if (!idxCurso) continue
 
-    // Nº FNJ (inteiro) + %FNJ + %Freq no final da linha
-    const finalMatch = linha.match(/(\d+)\s+(\d{1,3}\.\d{2})\s+(\d{1,3}\.\d{2})\s*$/)
-    if (!finalMatch) continue
+    // Sequência no relatório após turma: Nº FJ, Jan..Dez (12 valores), Total
+    // FNJ, %FNJ, %Freq. Tentamos capturar os 12 meses; se a linha não bater
+    // exatamente com esse formato, caímos no padrão simples (só o total).
+    const mesesMatch = linha.match(/((?:\d+\s+){13})(\d+)\s+(\d{1,3}\.\d{2})\s+(\d{1,3}\.\d{2})\s*$/)
+    let numFNJ, percentualFNJ, percentualFreq
+    let faltasMensais = null
 
-    const numFNJ = parseInt(finalMatch[1], 10)
-    const percentualFNJ = parseFloat(finalMatch[2])
-    const percentualFreq = parseFloat(finalMatch[3])
+    if (mesesMatch) {
+      const numeros = mesesMatch[1].trim().split(/\s+/).map(Number)
+      faltasMensais = numeros.slice(1, 13) // descarta o Nº FJ (índice 0), fica só Jan..Dez
+      numFNJ = parseInt(mesesMatch[2], 10)
+      percentualFNJ = parseFloat(mesesMatch[3])
+      percentualFreq = parseFloat(mesesMatch[4])
+    } else {
+      const finalMatch = linha.match(/(\d+)\s+(\d{1,3}\.\d{2})\s+(\d{1,3}\.\d{2})\s*$/)
+      if (!finalMatch) continue
+      numFNJ = parseInt(finalMatch[1], 10)
+      percentualFNJ = parseFloat(finalMatch[2])
+      percentualFreq = parseFloat(finalMatch[3])
+    }
     if (Number.isNaN(numFNJ) || Number.isNaN(percentualFNJ) || Number.isNaN(percentualFreq)) continue
     if (percentualFreq > 100 || percentualFNJ > 100) continue
 
@@ -147,6 +160,7 @@ function extrairCandidatosFNJ(textoCompleto, diasLetivos = DIAS_LETIVOS_PADRAO) 
       numFNJ,
       percentualFNJ,
       percentualFreq,
+      faltasMensais,
       limiteNotificacao,
       nivel,
       selecionado: true
@@ -593,6 +607,7 @@ export default function BuscaAtiva() {
       percentual_fnj: c.percentualFNJ,
       percentual_freq: c.percentualFreq,
       num_fnj: c.numFNJ,
+      faltas_mensais: c.faltasMensais || null,
       elegivel_notificacao: c.nivel === 'critico',
       data_primeira_falta: hoje,
       faltas_acumuladas: c.numFNJ || 0,
