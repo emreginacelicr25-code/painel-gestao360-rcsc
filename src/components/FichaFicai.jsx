@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { X, Printer, Save } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient.js'
 
@@ -236,24 +237,22 @@ export default function FichaFicai({ caso, onFechar }) {
     window.print()
   }
 
-  return (
-    <div className="fixed inset-0 bg-night/40 flex items-center justify-center p-4 z-50 overflow-y-auto">
+  return createPortal(
+    <div id="ficai-modal-root" className="fixed inset-0 bg-night/40 flex items-center justify-center p-4 z-50 overflow-y-auto">
       <style>{`
         @media print {
           @page { size: A4; margin: 12mm; }
-          body * { display: none !important; }
-          #ficai-print-area, #ficai-print-area * { display: revert !important; }
-          #ficai-print-area {
-            display: block !important;
+          body > *:not(#ficai-modal-root) { display: none !important; }
+          #ficai-modal-root {
             position: static !important;
-            width: 100% !important;
+            background: none !important;
+            display: block !important;
             padding: 0 !important;
-            margin: 0 !important;
+            overflow: visible !important;
           }
-          #ficai-print-area table { display: table !important; width: 100% !important; border-collapse: collapse !important; }
-          #ficai-print-area tr { display: table-row !important; page-break-inside: avoid; break-inside: avoid; }
-          #ficai-print-area td { display: table-cell !important; }
           .no-print, .no-print * { display: none !important; }
+          #ficai-print-area table { page-break-inside: auto; }
+          #ficai-print-area tr { page-break-inside: avoid; break-inside: avoid; }
           input, textarea { border: none !important; background: transparent !important; }
         }
       `}</style>
@@ -621,6 +620,7 @@ export default function FichaFicai({ caso, onFechar }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
