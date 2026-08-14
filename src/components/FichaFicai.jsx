@@ -134,26 +134,54 @@ export default function FichaFicai({ caso, onFechar }) {
   const [salvando, setSalvando] = useState(false)
   const [salvo, setSalvo] = useState(false)
   const [autoPreenchido, setAutoPreenchido] = useState(false)
+  const [cadastroEncontrado, setCadastroEncontrado] = useState(false)
+  const [turnoCadastro, setTurnoCadastro] = useState(null)
 
   useEffect(() => {
     async function carregarConfigEPreencher() {
       const { data: config } = await supabase.from('busca_ativa_config').select('*').eq('id', 1).maybeSingle()
-      if (!config || !caso?.faltas_mensais) return
-      const somas = calcularFaltasPorBimestre(caso.faltas_mensais, config.mapa_bimestres)
-      if (!somas) return
-      const diasBim = config.dias_por_bimestre || {}
-      setDados((prev) => {
-        const aindaVazioFaltas = prev.faltas_injustificadas.every((v) => v === '')
-        const aindaVazioDias = prev.dias_letivos.every((v) => v === '')
-        return {
-          ...prev,
-          faltas_injustificadas: aindaVazioFaltas ? somas.map(String) : prev.faltas_injustificadas,
-          dias_letivos: aindaVazioDias
-            ? [1, 2, 3, 4].map((n) => String(diasBim[String(n)] ?? ''))
-            : prev.dias_letivos
+      if (config && caso?.faltas_mensais) {
+        const somas = calcularFaltasPorBimestre(caso.faltas_mensais, config.mapa_bimestres)
+        if (somas) {
+          const diasBim = config.dias_por_bimestre || {}
+          setDados((prev) => {
+            const aindaVazioFaltas = prev.faltas_injustificadas.every((v) => v === '')
+            const aindaVazioDias = prev.dias_letivos.every((v) => v === '')
+            return {
+              ...prev,
+              faltas_injustificadas: aindaVazioFaltas ? somas.map(String) : prev.faltas_injustificadas,
+              dias_letivos: aindaVazioDias
+                ? [1, 2, 3, 4].map((n) => String(diasBim[String(n)] ?? ''))
+                : prev.dias_letivos
+            }
+          })
+          setAutoPreenchido(true)
         }
-      })
-      setAutoPreenchido(true)
+      }
+
+      if (caso?.matricula) {
+        const { data: cadastro } = await supabase
+          .from('busca_ativa_alunos_cadastro')
+          .select('*')
+          .eq('matricula', String(caso.matricula))
+          .maybeSingle()
+        if (cadastro) {
+          setDados((prev) => ({
+            ...prev,
+            data_nascimento: prev.data_nascimento || cadastro.data_nascimento || '',
+            filiacao: prev.filiacao || cadastro.filiacao || '',
+            endereco: prev.endereco || cadastro.endereco || '',
+            cep: prev.cep || cadastro.cep || '',
+            telefone: prev.telefone || cadastro.telefone || '',
+            ano_escolaridade: prev.ano_escolaridade || cadastro.serie || '',
+            turma: prev.turma || cadastro.turma || '',
+            frequenta_sala_recursos:
+              prev.frequenta_sala_recursos ?? (cadastro.recebe_atendimento_especializado ? 'sim' : null)
+          }))
+          setTurnoCadastro(cadastro.turno || null)
+          setCadastroEncontrado(true)
+        }
+      }
     }
     carregarConfigEPreencher()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -244,6 +272,12 @@ export default function FichaFicai({ caso, onFechar }) {
           Preencha ou ajuste os campos abaixo. Nada é obrigatório para visualizar a impressão —
           salve quando quiser guardar um rascunho, e marque "salvar e encaminhar" só quando a
           ficha for de fato levada ao Conselho Tutelar (isso avança o caso para a Etapa 5).
+          {cadastroEncontrado && (
+            <span className="block text-sage mt-1">
+              Dados cadastrais encontrados para esta matrícula — nascimento, filiação e endereço
+              já vieram preenchidos. Confira antes de imprimir.
+            </span>
+          )}
         </p>
 
         <div id="ficai-print-area" className="bg-white text-black">
@@ -324,6 +358,11 @@ export default function FichaFicai({ caso, onFechar }) {
                     />
                   ))}
                 </div>
+                {turnoCadastro && (
+                  <p className="no-print text-[10px] text-night/40 mt-1">
+                    Cadastro indica: {turnoCadastro} — confirme o horário exato acima.
+                  </p>
+                )}
               </CampoLinha>
               <CampoLinha label="FREQUENTA A SALA DE RECURSOS:">
                 <div className="flex gap-4">
