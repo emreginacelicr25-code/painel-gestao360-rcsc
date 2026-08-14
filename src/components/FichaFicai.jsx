@@ -242,6 +242,11 @@ export default function FichaFicai({ caso, onFechar }) {
       <style>{`
         @media print {
           @page { size: A4; margin: 12mm; }
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
+          }
           body > *:not(#ficai-modal-root) { display: none !important; }
           #ficai-modal-root {
             position: static !important;
